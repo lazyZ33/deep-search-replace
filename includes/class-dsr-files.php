@@ -129,7 +129,7 @@ class DSR_Files {
 				continue;
 			}
 			$real = wp_normalize_path( $real );
-			if ( ! is_writable( $real ) ) {
+			if ( ! wp_is_writable( $real ) ) {
 				$run['errors'][] = "Not writable: $real";
 				continue;
 			}
