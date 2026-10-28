@@ -344,7 +344,7 @@ class DSR_Runner {
 		$ids = (array) get_option( self::RUNS_OPTION, array() );
 
 		// Runs interrupted before version 1.3.4 were never listed: pick them up so they can be undone.
-		foreach ( (array) $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE 'dsr\\_run\\_%'" ) as $name ) {
+		foreach ( (array) $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE 'dsr\\_run\\_%'" ) as $name ) { // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 			$id  = substr( $name, strlen( 'dsr_run_' ) );
 			$run = in_array( $id, $ids, true ) ? null : self::get_run( $id );
 			if ( $run && 'running' === $run['status'] && 'db' === $run['type'] && 'apply' === $run['mode'] ) {
