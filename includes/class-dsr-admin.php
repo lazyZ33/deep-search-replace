@@ -31,7 +31,7 @@ class DSR_Admin {
 
 	public static function init() {
 		add_action( 'admin_menu', array( __CLASS__, 'menu' ) );
-		foreach ( array( 'save_rules', 'start', 'step', 'finish', 'files_scan', 'files_apply', 'undo', 'delete_backup', 'history', 'live_save', 'report', 'items_index', 'items', 'restore_item' ) as $action ) {
+		foreach ( array( 'save_rules', 'start', 'step', 'finish', 'files_scan', 'files_apply', 'undo', 'delete_backup', 'history', 'live_save', 'report', 'items_index', 'items', 'restore_item', 'urlmap_check' ) as $action ) {
 			add_action( 'wp_ajax_dsr_' . $action, array( __CLASS__, 'ajax_' . $action ) );
 		}
 	}
@@ -61,6 +61,7 @@ class DSR_Admin {
 					'rules'     => $settings['rules'],
 					'preset'    => DSR_Plugin::default_rules(),
 					'postTypes' => wp_list_pluck( DSR_DB::get_post_types(), 'post_type' ),
+					'siteHost'  => (string) wp_parse_url( home_url(), PHP_URL_HOST ),
 				)
 			) . ';',
 			'before'
@@ -94,6 +95,25 @@ class DSR_Admin {
 					<button type="button" class="button" id="dsr-preset">Em dash &rarr; comma preset</button>
 				</p>
 				<p class="description">Spaces in the replacement are shown as <code>␣</code> under each field so you can see them. Rules run top to bottom.</p>
+			</div>
+
+			<div class="dsr-card">
+				<h2>URL map <small>bulk link replacement</small></h2>
+				<p>One link per line: <code>old URL, new URL</code> (comma, tab or semicolon; a header row and pasted spreadsheet columns are fine). Each old URL is matched as a <strong>whole URL</strong> only: <code>/old-page/</code> also matches <code>https://www.site.com/old-page</code>, <code>/old-page/?utm=x</code> and Elementor's <code>\/old-page\/</code>, but never <code>/old-page/child/</code> or <code>/old-page-2/</code>. Chains (A &rarr; B &rarr; C) are followed to the end; loops are skipped. Relative links stay relative, absolute links stay absolute.</p>
+				<textarea id="dsr-urlmap" rows="8" class="large-text code" placeholder="/old-page/,/new-page/&#10;https://example.com/another-old/,/another-new/"></textarea>
+				<p>
+					<label>Load a CSV file: <input type="file" id="dsr-urlmap-file" accept=".csv,.tsv,.txt,text/csv,text/plain"></label>
+				</p>
+				<p>
+					<label>Site domains <input type="text" id="dsr-urlmap-domains" class="regular-text code" placeholder="example.com, staging.example.com"></label>
+					<span class="description">Absolute links on these domains are matched (with or without <code>www</code>, http or https). This site's own domain is always included. On a staging copy, add the live domain if the content links to it.</span>
+				</p>
+				<p>
+					<button type="button" class="button" id="dsr-urlmap-check">Check map</button>
+					<button type="button" class="button-link dsr-remove" id="dsr-urlmap-clear">Clear map</button>
+				</p>
+				<div id="dsr-urlmap-result"></div>
+				<p class="description">Redirect data (Rank Math, Redirection, Yoast Premium, Simple 301 Redirects, Safe Redirect Manager) is never changed, so the redirects keep working for old links from outside the site.</p>
 			</div>
 
 			<nav class="nav-tab-wrapper dsr-tabs">
@@ -138,10 +158,11 @@ class DSR_Admin {
 									?>
 									<p class="dsr-divider">Other tables: form entries, logs, caches, analytics. Not shown on the site; tick only if you know they hold page content.</p>
 								<?php endif; ?>
-								<label class="<?php echo $schema ? '' : 'dsr-disabled'; ?>">
-									<input type="checkbox" name="tables" value="<?php echo esc_attr( $name ); ?>" data-content="<?php echo $is_content ? '1' : '0'; ?>" <?php checked( $schema && $is_content ); ?> <?php disabled( ! $schema ); ?>>
+								<?php $protected = DSR_DB::is_protected_table( $name ); ?>
+								<label class="<?php echo $schema && ! $protected ? '' : 'dsr-disabled'; ?>">
+									<input type="checkbox" name="tables" value="<?php echo esc_attr( $name ); ?>" data-content="<?php echo $is_content && ! $protected ? '1' : '0'; ?>" <?php checked( $schema && $is_content && ! $protected ); ?> <?php disabled( ! $schema || $protected ); ?>>
 									<?php echo esc_html( $name ); ?>
-									<span class="count">(<?php echo esc_html( number_format_i18n( $info['rows'] ) ); ?> rows, <?php echo esc_html( size_format( $info['size'] ) ); ?><?php echo $schema ? '' : ', no primary key, skipped'; ?>)</span>
+									<span class="count">(<?php echo esc_html( number_format_i18n( $info['rows'] ) ); ?> rows, <?php echo esc_html( size_format( $info['size'] ) ); ?><?php echo $protected ? ', redirect data, never changed' : ( $schema ? '' : ', no primary key, skipped' ); ?>)</span>
 								</label>
 							<?php endforeach; ?>
 						</div>
@@ -458,6 +479,25 @@ class DSR_Admin {
 	private static function post_object_type() {
 		$type = (string) self::post( 'type' );
 		return preg_match( '/^[A-Za-z0-9_$]{1,64}$/', $type ) ? $type : 'post';
+	}
+
+	/** Parse a URL map without running it: usable pairs, skipped lines, resolved chains. */
+	public static function ajax_urlmap_check() {
+		self::guard();
+		$map   = new DSR_Url_Map( (string) self::post( 'csv' ), (string) self::post( 'domains' ) );
+		$pairs = array();
+		foreach ( array_slice( $map->pairs(), 0, 500, true ) as $from => $to ) {
+			$pairs[] = array( $from, $to );
+		}
+		wp_send_json_success(
+			array(
+				'count'    => $map->count(),
+				'hosts'    => $map->hosts(),
+				'problems' => array_slice( $map->problems, 0, 300 ),
+				'chains'   => array_slice( $map->chains, 0, 300 ),
+				'pairs'    => $pairs,
+			)
+		);
 	}
 
 	public static function ajax_live_save() {

@@ -21,6 +21,42 @@ class DSR_DB {
 		'comment_author_IP', 'comment_agent', 'comment_type', 'comment_approved', 'session_id', 'session_key',
 	);
 
+	/**
+	 * Redirect storage of SEO / redirect plugins. Rewriting it would change the redirect
+	 * sources themselves (breaking the redirects, or making them loop), so it is never touched,
+	 * whatever is ticked. Table names are without the prefix.
+	 */
+	const PROTECTED_TABLES = array(
+		'rank_math_redirections',
+		'rank_math_redirections_cache',
+		'redirection_items',
+		'redirection_groups',
+		'redirection_404',
+		'redirection_logs',
+		'eps_redirects',
+		'yoast_premium_redirects',
+	);
+
+	/** Options holding redirects (Yoast Premium, Simple 301 Redirects). */
+	const PROTECTED_OPTIONS = array(
+		'wpseo-premium-redirects-base',
+		'wpseo-premium-redirects-export-plain',
+		'wpseo-premium-redirects-export-regex',
+		'wpseo_redirect',
+		'301_redirects',
+	);
+
+	/** Post types that are redirect rules (Safe Redirect Manager, Rank Math legacy). Their posts and meta are skipped. */
+	const PROTECTED_POST_TYPES = array( 'redirect_rule', 'rank_math_redirect' );
+
+	public static function is_protected_table( $table ) {
+		global $wpdb;
+		if ( 0 !== strpos( $table, $wpdb->prefix ) ) {
+			return false;
+		}
+		return in_array( substr( $table, strlen( $wpdb->prefix ) ), self::PROTECTED_TABLES, true );
+	}
+
 	public static function backup_table() {
 		global $wpdb;
 		return $wpdb->prefix . 'dsr_backup';
@@ -178,7 +214,13 @@ class DSR_DB {
 			'errors'       => array(),
 			'skipped'      => '',
 			'scanned'      => 0,
+			'links'        => array(),
 		);
+
+		if ( self::is_protected_table( $table ) ) {
+			$result['skipped'] = 'redirect data, never changed';
+			return $result;
+		}
 
 		$schema = self::get_schema( $table );
 		if ( ! $schema ) {
@@ -209,17 +251,23 @@ class DSR_DB {
 
 		self::add_table_filters( $run, $table, $where, $args );
 
-		$likes = array();
-		foreach ( $schema['cols'] as $col ) {
-			foreach ( self::sql_needles( $replacer->needles() ) as $needle ) {
-				$likes[] = 'CAST(' . self::quote( $col ) . ' AS BINARY) LIKE %s';
-				$args[]  = '%' . $wpdb->esc_like( $needle ) . '%';
+		// Only fetch rows that can contain a match. A large URL map has too many needles for
+		// LIKEs to help, so then every row of the window is fetched and checked in PHP.
+		$needles = $replacer->sql_needles();
+		if ( null !== $needles ) {
+			$likes = array();
+			foreach ( $schema['cols'] as $col ) {
+				foreach ( self::sql_needles( $needles ) as $needle ) {
+					$likes[] = 'CAST(' . self::quote( $col ) . ' AS BINARY) LIKE %s';
+					$args[]  = '%' . $wpdb->esc_like( $needle ) . '%';
+				}
 			}
+			$where[] = $likes ? '(' . implode( ' OR ', $likes ) . ')' : '0 = 1';
 		}
-		$where[] = '(' . implode( ' OR ', $likes ) . ')';
 
 		$select = $qpk . ', ' . implode( ', ', array_map( array( __CLASS__, 'quote' ), $schema['cols'] ) );
-		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT $select FROM $qt WHERE " . implode( ' AND ', $where ) . " ORDER BY $qpk ASC", $args ), ARRAY_A ); // phpcs:ignore
+		$sql    = "SELECT $select FROM $qt WHERE " . ( $where ? implode( ' AND ', $where ) : '1 = 1' ) . " ORDER BY $qpk ASC";
+		$rows   = $wpdb->get_results( $args ? $wpdb->prepare( $sql, $args ) : $sql, ARRAY_A ); // phpcs:ignore
 
 		if ( $wpdb->last_error ) {
 			$result['errors'][] = $wpdb->last_error;
@@ -264,6 +312,9 @@ class DSR_DB {
 		}
 		$replacer->errors = array();
 
+		$result['links']  = $replacer->links;
+		$replacer->links  = array();
+
 		return $result;
 	}
 
@@ -291,14 +342,15 @@ class DSR_DB {
 	private static function add_table_filters( array $run, $table, array &$where, array &$args ) {
 		global $wpdb;
 		if ( $table === $wpdb->options ) {
-			// Never touch this plugin's own settings / run state (they contain the search terms).
+			// Never touch this plugin's own settings / run state (they contain the search terms),
+			// nor redirect plugins' stored redirects.
 			$where[] = "option_name NOT LIKE 'dsr\\_%'";
+			$where[] = 'option_name NOT IN (' . implode( ', ', array_fill( 0, count( self::PROTECTED_OPTIONS ), '%s' ) ) . ')';
+			$args    = array_merge( $args, self::PROTECTED_OPTIONS );
 			return;
 		}
 		$excluded = isset( $run['exclude_post_types'] ) ? array_values( (array) $run['exclude_post_types'] ) : array();
-		if ( ! $excluded ) {
-			return;
-		}
+		$excluded = array_values( array_unique( array_merge( $excluded, self::PROTECTED_POST_TYPES ) ) );
 		$in = implode( ', ', array_fill( 0, count( $excluded ), '%s' ) );
 		if ( $table === $wpdb->posts ) {
 			$where[] = "post_type NOT IN ($in)";

@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Deep Search & Replace
  * Description:       Site-wide search & replace that understands where content really lives: all post types, Gutenberg blocks, ACF fields, options & blocks, Elementor data, serialized and JSON data, plus theme template files and a live output filter. Dry run, backups and one-click undo.
- * Version:           1.3.5
+ * Version:           1.4.0
  * Requires at least: 5.6
  * Requires PHP:      7.2
  * License:           GPL-2.0-or-later
@@ -13,11 +13,12 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'DSR_VERSION', '1.3.5' );
+define( 'DSR_VERSION', '1.4.0' );
 define( 'DSR_FILE', __FILE__ );
 define( 'DSR_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DSR_URL', plugin_dir_url( __FILE__ ) );
 
+require_once DSR_DIR . 'includes/class-dsr-url-map.php';
 require_once DSR_DIR . 'includes/class-dsr-replacer.php';
 require_once DSR_DIR . 'includes/class-dsr-db.php';
 require_once DSR_DIR . 'includes/class-dsr-files.php';

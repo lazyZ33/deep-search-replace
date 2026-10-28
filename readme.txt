@@ -4,7 +4,7 @@ Tags: search replace, elementor, gutenberg, acf, database
 Requires at least: 5.6
 Tested up to: 7.1
 Requires PHP: 7.2
-Stable tag: 1.3.5
+Stable tag: 1.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -32,6 +32,14 @@ Deep Search & Replace understands where content really lives: all post types, Gu
 Yes. Take a full database backup before the first real run.
 
 == Changelog ==
+
+= 1.4.0 =
+* New: URL map for bulk link replacement. Paste or load a CSV of old URL, new URL (any number of lines).
+* URL map matches whole URLs only: /old/ never changes /old/child/ or /old-2/. Absolute, relative, www, http/https, missing trailing slash, query strings and Elementor/JSON escaped forms are all handled.
+* URL map follows redirect chains to the final URL and skips loops, home page sources, regex sources and other domains, with a "Check map" report.
+* Dry runs and runs list every link found or replaced, with a CSV download. History reports show which links changed per page.
+* WP-CLI: --url-map, --domains and --links-csv.
+* Safety: redirect data of Rank Math, Redirection, Yoast Premium, Simple 301 Redirects and Safe Redirect Manager is never changed.
 
 = 1.3.5 =
 * Initial public release.

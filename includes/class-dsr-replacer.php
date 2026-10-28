@@ -28,11 +28,24 @@ class DSR_Replacer {
 	/** @var string[] Values that were left untouched because replacing would have corrupted them. */
 	public $errors = array();
 
+	/** @var DSR_Url_Map|null Bulk URL map (rule type "urls"). */
+	private $url_map = null;
+
+	/** @var array "old URL\tnew URL" => occurrences, for URL map replacements made by this instance. */
+	public $links = array();
+
 	/**
 	 * @param array[] $rules Each rule: search, replace, encoded (bool), absorb_spaces (bool).
 	 */
 	public function __construct( array $rules ) {
 		foreach ( $rules as $rule ) {
+			if ( isset( $rule['type'] ) && 'urls' === $rule['type'] ) {
+				$map = new DSR_Url_Map( isset( $rule['csv'] ) ? $rule['csv'] : '', isset( $rule['domains'] ) ? $rule['domains'] : '' );
+				if ( $map->count() ) {
+					$this->url_map = $map;
+				}
+				continue;
+			}
 			$search = isset( $rule['search'] ) ? (string) $rule['search'] : '';
 			if ( '' === $search ) {
 				continue;
@@ -97,12 +110,31 @@ class DSR_Replacer {
 
 	/** @return bool */
 	public function has_rules() {
-		return ! empty( $this->compiled );
+		return ! empty( $this->compiled ) || null !== $this->url_map;
 	}
 
-	/** @return string[] */
+	/** @return string[] Literal needles of the text rules. */
 	public function needles() {
 		return $this->needles;
+	}
+
+	/**
+	 * Literals for the SQL LIKE pre-filter, or null when rows can't usefully be pre-filtered
+	 * (a large URL map): then every row is checked in PHP.
+	 *
+	 * @return string[]|null
+	 */
+	public function sql_needles() {
+		if ( null === $this->url_map ) {
+			return $this->needles;
+		}
+		$urls = $this->url_map->sql_needles();
+		return null === $urls ? null : array_values( array_unique( array_merge( $this->needles, $urls ) ) );
+	}
+
+	/** @return DSR_Url_Map|null */
+	public function url_map() {
+		return $this->url_map;
 	}
 
 	/**
@@ -117,7 +149,7 @@ class DSR_Replacer {
 				return true;
 			}
 		}
-		return false;
+		return null !== $this->url_map && $this->url_map->may_match( $value );
 	}
 
 	/**
@@ -270,6 +302,10 @@ class DSR_Replacer {
 			}
 			$value        = $result;
 			$this->count += $count;
+		}
+		if ( null !== $this->url_map ) {
+			// Escaping is copied from each matched URL, so this is safe in text and JSON alike.
+			$value = $this->url_map->replace( $value, $this->count, $this->links );
 		}
 		return $value;
 	}

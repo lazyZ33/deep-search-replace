@@ -33,6 +33,7 @@
 
 	function getRules() {
 		var rules = [];
+		var map = $( '#dsr-urlmap' ).val() || '';
 		$body.find( 'tr' ).each( function () {
 			var $r = $( this );
 			var search = $r.find( '.dsr-search' ).val();
@@ -46,6 +47,9 @@
 				} );
 			}
 		} );
+		if ( map.trim() ) {
+			rules.push( { type: 'urls', search: 'URL map', replace: '', csv: map, domains: $( '#dsr-urlmap-domains' ).val() || '' } );
+		}
 		return rules;
 	}
 
@@ -66,7 +70,67 @@
 		DSR.preset.forEach( addRule );
 	} );
 
-	( DSR.rules && DSR.rules.length ? DSR.rules : DSR.preset ).forEach( addRule );
+	/* ---------- URL map ---------- */
+
+	var saved = DSR.rules && DSR.rules.length ? DSR.rules : DSR.preset;
+	var textRules = saved.filter( function ( r ) {
+		return r.type !== 'urls';
+	} );
+	var urlRule = saved.filter( function ( r ) {
+		return r.type === 'urls';
+	} )[ 0 ];
+	( textRules.length || urlRule ? textRules : DSR.preset ).forEach( addRule );
+	if ( ! textRules.length ) {
+		addRule();
+	}
+	$( '#dsr-urlmap' ).val( urlRule ? urlRule.csv : '' );
+	$( '#dsr-urlmap-domains' ).val( urlRule && urlRule.domains ? urlRule.domains : DSR.siteHost );
+
+	$( '#dsr-urlmap-file' ).on( 'change', function () {
+		var file = this.files && this.files[ 0 ];
+		if ( ! file ) {
+			return;
+		}
+		var reader = new FileReader();
+		reader.onload = function () {
+			$( '#dsr-urlmap' ).val( String( reader.result ) );
+			$( '#dsr-urlmap-check' ).trigger( 'click' );
+		};
+		reader.readAsText( file );
+		this.value = '';
+	} );
+
+	$( '#dsr-urlmap-clear' ).on( 'click', function () {
+		$( '#dsr-urlmap' ).val( '' );
+		$( '#dsr-urlmap-result' ).empty();
+	} );
+
+	$( '#dsr-urlmap-check' ).on( 'click', function () {
+		var $out = $( '#dsr-urlmap-result' ).html( '<p>Checking...</p>' );
+		api( 'urlmap_check', { csv: $( '#dsr-urlmap' ).val() || '', domains: $( '#dsr-urlmap-domains' ).val() || '' } ).then( function ( r ) {
+			var html = '<p><strong>' + r.count + ' links ready.</strong> Domains matched: <code>' + esc( r.hosts.join( ', ' ) || 'none' ) + '</code></p>';
+			if ( r.problems.length ) {
+				html += '<p class="dsr-bad">' + r.problems.length + ' lines skipped:</p><ul class="dsr-errors">' + r.problems.map( function ( p ) {
+					return '<li>' + esc( p ) + '</li>';
+				} ).join( '' ) + '</ul>';
+			}
+			if ( r.chains.length ) {
+				html += '<p>' + r.chains.length + ' chains followed to the final URL:</p><ul class="dsr-errors dsr-muted">' + r.chains.map( function ( c ) {
+					return '<li>' + esc( c ) + '</li>';
+				} ).join( '' ) + '</ul>';
+			}
+			if ( r.pairs.length ) {
+				html += '<details><summary>Show the map as it will be used' + ( r.count > r.pairs.length ? ' (first ' + r.pairs.length + ')' : '' ) + '</summary>' +
+					'<table class="widefat striped dsr-report-table"><thead><tr><th>Old (normalized)</th><th>New</th></tr></thead><tbody>' +
+					r.pairs.map( function ( p ) {
+						return '<tr><td><code>' + esc( p[ 0 ] ) + '</code></td><td><code>' + esc( p[ 1 ] ) + '</code></td></tr>';
+					} ).join( '' ) + '</tbody></table></details>';
+			}
+			$out.html( html );
+		}, function ( msg ) {
+			$out.html( '<div class="notice notice-error inline"><p>' + esc( msg ) + '</p></div>' );
+		} );
+	} );
 
 	/* ---------- Helpers ---------- */
 
@@ -95,6 +159,9 @@
 	function highlight( text, rules, side ) {
 		var html = esc( text );
 		rules.forEach( function ( rule ) {
+			if ( rule.type === 'urls' ) {
+				return;
+			}
 			var term = esc( side === 'before' ? rule.search : rule.replace );
 			if ( term.trim() ) {
 				html = html.split( term ).join( '<mark>' + term + '</mark>' );
@@ -136,6 +203,12 @@
 			window.alert( 'Add at least one search term.' );
 			return;
 		}
+		var textCount = rules.filter( function ( r ) {
+			return r.type !== 'urls';
+		} ).length;
+		if ( textCount && textCount < rules.length && ! window.confirm( 'This run uses the URL map AND ' + textCount + ' text rule(s) from the Rules table (for example the em dash preset).\n\nOK = run both. Cancel = stop, so you can remove the text rules first.' ) ) {
+			return;
+		}
 		if ( mode === 'apply' && ! window.confirm( 'Replace in the database now?\n\nChanged values are backed up and can be undone from History, but make sure you have a full database backup too.' ) ) {
 			return;
 		}
@@ -144,6 +217,7 @@
 		var stats = {};
 		var samples = [];
 		var errors = [];
+		var links = {};
 		var tables, runId, estimate = {}, scanned = {}, pause = 0, index = 0, cursorNow = '', note = '';
 		var started = Date.now();
 
@@ -182,7 +256,7 @@
 		} ).then( function ( summary ) {
 			keepPageOpen( false );
 			render( apply ? 'Done.' : 'Dry run complete. Nothing was changed.', true );
-			report( mode, stats, samples, errors, rules, summary.purged || [] );
+			report( mode, stats, samples, errors, rules, summary.purged || [], links );
 			refreshHistory();
 		} ).fail( function ( msg ) {
 			keepPageOpen( false );
@@ -266,6 +340,9 @@
 				cursorNow = r.cursor || '';
 				samples = samples.concat( r.samples ).slice( 0, 60 );
 				errors = errors.concat( r.errors ).slice( 0, 200 );
+				Object.keys( r.links || {} ).forEach( function ( k ) {
+					links[ k ] = ( links[ k ] || 0 ) + r.links[ k ];
+				} );
 				render( apply ? 'Replacing...' : 'Scanning...' );
 				return r.done ? null : wait( pause ).then( function () {
 					return step( table, r.cursor, 0 );
@@ -309,7 +386,7 @@
 		} : null;
 	}
 
-	function report( mode, stats, samples, errors, rules, purged ) {
+	function report( mode, stats, samples, errors, rules, purged, links ) {
 		var totals = { rows: 0, cells: 0, replacements: 0 };
 		var rows = '';
 		Object.keys( stats ).forEach( function ( t ) {
@@ -331,6 +408,16 @@
 		if ( rows ) {
 			html += '<table class="widefat striped dsr-summary"><thead><tr><th>Table</th><th>Rows</th><th>Values</th><th>Replacements</th><th>Notes</th></tr></thead><tbody>' + rows + '</tbody></table>';
 		}
+		var linkKeys = Object.keys( links || {} ).sort();
+		if ( linkKeys.length ) {
+			html += '<h3>Links ' + ( mode === 'apply' ? 'replaced' : 'found' ) + ' (' + linkKeys.length + ' distinct) ' +
+				'<button type="button" class="button" id="dsr-links-csv">Download CSV</button></h3>' +
+				'<div class="dsr-scroll"><table class="widefat striped dsr-report-table"><thead><tr><th>Link as written</th><th>New link</th><th>Times</th></tr></thead><tbody>' +
+				linkKeys.map( function ( k ) {
+					var p = k.split( '\t' );
+					return '<tr><td><code>' + esc( p[ 0 ] ) + '</code></td><td><code>' + esc( p[ 1 ] ) + '</code></td><td>' + links[ k ] + '</td></tr>';
+				} ).join( '' ) + '</tbody></table></div>';
+		}
 		if ( samples.length ) {
 			html += '<h3>Examples</h3><table class="widefat dsr-samples"><thead><tr><th>Where</th><th>Before</th><th>After</th></tr></thead><tbody>';
 			samples.forEach( function ( s ) {
@@ -345,6 +432,26 @@
 			} ).join( '' ) + '</ul>';
 		}
 		$results.html( html );
+		$results.find( '#dsr-links-csv' ).on( 'click', function () {
+			download( 'links-' + mode + '.csv', [ [ 'old_link', 'new_link', 'times' ] ].concat( linkKeys.map( function ( k ) {
+				var p = k.split( '\t' );
+				return [ p[ 0 ], p[ 1 ], links[ k ] ];
+			} ) ) );
+		} );
+	}
+
+	function download( name, rows ) {
+		var csv = rows.map( function ( row ) {
+			return row.map( function ( v ) {
+				return '"' + String( v == null ? '' : v ).replace( /"/g, '""' ) + '"';
+			} ).join( ',' );
+		} ).join( '\r\n' );
+		var a = document.createElement( 'a' );
+		a.href = URL.createObjectURL( new Blob( [ '\ufeff' + csv ], { type: 'text/csv;charset=utf-8' } ) );
+		a.download = name;
+		document.body.appendChild( a );
+		a.click();
+		a.remove();
 	}
 
 	$( '#dsr-dry' ).on( 'click', function () {
@@ -555,8 +662,8 @@
 
 		$report.html( html );
 		$report.find( '#dsr-report-csv' ).on( 'click', function () {
-			var cols = [ 'table', 'id', 'column', 'post_type', 'title', 'label', 'occurrences', 'edit' ];
-			var csv = [ 'table,id,column,post_type,title,field_or_option,occurrences,edit_url' ].concat( items.map( function ( it ) {
+			var cols = [ 'table', 'id', 'column', 'post_type', 'title', 'label', 'occurrences', 'links', 'edit' ];
+			var csv = [ 'table,id,column,post_type,title,field_or_option,occurrences,links_changed,edit_url' ].concat( items.map( function ( it ) {
 				return cols.map( function ( c ) {
 					var v = it[ c ] == null ? '' : String( it[ c ] );
 					return '"' + v.replace( /"/g, '""' ) + '"';

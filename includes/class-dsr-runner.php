@@ -34,7 +34,21 @@ class DSR_Runner {
 	 */
 	public static function sanitize_rules( $raw ) {
 		$rules = array();
+		$urls  = null;
 		foreach ( (array) $raw as $rule ) {
+			if ( is_array( $rule ) && isset( $rule['type'] ) && 'urls' === $rule['type'] ) {
+				// One URL map per run; it holds any number of old => new pairs.
+				if ( null === $urls && isset( $rule['csv'] ) && '' !== trim( (string) $rule['csv'] ) ) {
+					$urls = array(
+						'type'    => 'urls',
+						'search'  => 'URL map',
+						'replace' => '',
+						'csv'     => (string) $rule['csv'],
+						'domains' => isset( $rule['domains'] ) ? trim( (string) $rule['domains'] ) : '',
+					);
+				}
+				continue;
+			}
 			if ( ! is_array( $rule ) || ! isset( $rule['search'] ) || '' === (string) $rule['search'] ) {
 				continue;
 			}
@@ -48,6 +62,9 @@ class DSR_Runner {
 			if ( count( $rules ) >= 20 ) {
 				break;
 			}
+		}
+		if ( null !== $urls ) {
+			$rules[] = $urls; // After the text rules: rules run top to bottom.
 		}
 		return $rules;
 	}
@@ -67,7 +84,7 @@ class DSR_Runner {
 		$available = DSR_DB::get_tables();
 		$tables    = array();
 		foreach ( (array) $args['tables'] as $table ) {
-			if ( isset( $available[ $table ] ) ) {
+			if ( isset( $available[ $table ] ) && ! DSR_DB::is_protected_table( $table ) ) {
 				$tables[] = $table;
 			}
 		}
@@ -152,6 +169,9 @@ class DSR_Runner {
 					$result[ $key ] += $window[ $key ];
 				}
 				$result['samples'] = array_slice( array_merge( $result['samples'], $window['samples'] ), 0, DSR_DB::SAMPLES_PER_TBL );
+				foreach ( $window['links'] as $link => $n ) {
+					$result['links'][ $link ] = ( isset( $result['links'][ $link ] ) ? $result['links'][ $link ] : 0 ) + $n;
+				}
 				$result['errors']  = array_merge( $result['errors'], $window['errors'] );
 				$result['done']    = $window['done'];
 				$result['cursor']  = $window['cursor'];
@@ -333,6 +353,10 @@ class DSR_Runner {
 		}
 		$parts = array();
 		foreach ( $rules as $rule ) {
+			if ( isset( $rule['type'] ) && 'urls' === $rule['type'] ) {
+				$parts[] = 'URL map (' . DSR_Url_Map::line_count( $rule['csv'] ) . ' lines)';
+				continue;
+			}
 			$parts[] = '"' . $rule['search'] . '" → "' . $rule['replace'] . '"';
 		}
 		return implode( ', ', $parts );

@@ -43,8 +43,13 @@ class DSR_Report {
 			}
 			$described = self::describe( $rows );
 			foreach ( $rows as $row ) {
-				$before = $replacer->count;
+				$before          = $replacer->count;
+				$replacer->links = array();
 				$replacer->replace_value( $row['old_value'] );
+				$links = array();
+				foreach ( $replacer->links as $link => $n ) {
+					$links[] = str_replace( "\t", ' -> ', $link ) . ( $n > 1 ? " (x$n)" : '' );
+				}
 				$key     = $row['table_name'] . ':' . $row['pk_val'];
 				$items[] = array_merge(
 					array(
@@ -52,6 +57,7 @@ class DSR_Report {
 						'id'          => $row['pk_val'],
 						'column'      => $row['col_name'],
 						'occurrences' => $replacer->count - $before,
+						'links'       => implode( '; ', $links ),
 					),
 					isset( $described[ $key ] ) ? $described[ $key ] : array()
 				);
