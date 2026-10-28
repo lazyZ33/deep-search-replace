@@ -125,7 +125,8 @@ class DSR_DB {
 		if ( isset( $cache[ $table ] ) ) {
 			return $cache[ $table ];
 		}
-		$columns = $wpdb->get_results( 'SHOW COLUMNS FROM ' . self::quote( $table ), ARRAY_A );
+		$qtable  = self::quote( $table ); // Backtick-escaped identifier; $wpdb->prepare() cannot bind identifiers on WP < 6.2.
+		$columns = $wpdb->get_results( 'SHOW COLUMNS FROM ' . $qtable, ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter
 		$pks     = array();
 		$cols    = array();
 		foreach ( (array) $columns as $c ) {
