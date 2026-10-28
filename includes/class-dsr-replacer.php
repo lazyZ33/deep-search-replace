@@ -372,12 +372,12 @@ class DSR_Replacer {
 
 	private function read_length_prefixed( $s, &$pos, $type, $terminator ) {
 		if ( ! preg_match( '/\G' . $type . ':(\d+):"/', $s, $m, 0, $pos ) ) {
-			throw new RuntimeException( "bad $type header" );
+			throw new RuntimeException( esc_html( "bad $type header" ) );
 		}
 		$len   = (int) $m[1];
 		$start = $pos + strlen( $m[0] );
 		if ( substr( $s, $start + $len, strlen( $terminator ) ) !== $terminator ) {
-			throw new RuntimeException( "bad $type length" );
+			throw new RuntimeException( esc_html( "bad $type length" ) );
 		}
 		$pos = $start + $len + strlen( $terminator );
 		return substr( $s, $start, $len );
