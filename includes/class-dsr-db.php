@@ -87,7 +87,7 @@ class DSR_DB {
 
 	private static function table_exists( $table ) {
 		global $wpdb;
-		return $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ) === $table;
+		return $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ) === $table; // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 	}
 
 	/**
@@ -97,7 +97,7 @@ class DSR_DB {
 	 */
 	public static function get_tables() {
 		global $wpdb;
-		$rows   = $wpdb->get_results( $wpdb->prepare( 'SHOW TABLE STATUS LIKE %s', $wpdb->esc_like( $wpdb->prefix ) . '%' ), ARRAY_A );
+		$rows   = $wpdb->get_results( $wpdb->prepare( 'SHOW TABLE STATUS LIKE %s', $wpdb->esc_like( $wpdb->prefix ) . '%' ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		$tables = array();
 		foreach ( (array) $rows as $row ) {
 			$name = $row['Name'];
@@ -150,7 +150,7 @@ class DSR_DB {
 		global $wpdb;
 		static $types = null;
 		if ( null === $types ) {
-			$types = $wpdb->get_results( "SELECT post_type, COUNT(*) AS n FROM {$wpdb->posts} GROUP BY post_type ORDER BY post_type", ARRAY_A );
+			$types = $wpdb->get_results( "SELECT post_type, COUNT(*) AS n FROM {$wpdb->posts} GROUP BY post_type ORDER BY post_type", ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		}
 		return $types;
 	}
@@ -315,7 +315,7 @@ class DSR_DB {
 	private static function write_cell( $run_id, $table, $pk, $pk_val, $col, $old, $new, array $object ) {
 		global $wpdb;
 		$bt    = self::backup_table();
-		$saved = $wpdb->insert(
+		$saved = $wpdb->insert( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 			$bt,
 			array(
 				'run_id'      => $run_id,
@@ -335,9 +335,9 @@ class DSR_DB {
 		}
 		if ( DSR_Objects::ROW === $object[0] ) {
 			// No numeric owner: the backed-up value is an item of its own.
-			$wpdb->update( $bt, array( 'object_id' => $wpdb->insert_id ), array( 'id' => $wpdb->insert_id ), array( '%d' ), array( '%d' ) );
+			$wpdb->update( $bt, array( 'object_id' => $wpdb->insert_id ), array( 'id' => $wpdb->insert_id ), array( '%d' ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		}
-		return false !== $wpdb->update( $table, array( $col => $new ), array( $pk => $pk_val ), array( '%s' ), array( '%s' ) );
+		return false !== $wpdb->update( $table, array( $col => $new ), array( $pk => $pk_val ), array( '%s' ), array( '%s' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 	}
 
 	/**
@@ -373,18 +373,18 @@ class DSR_DB {
 				if ( null !== $current && md5( $current ) !== $row['new_hash'] ) {
 					// Edited again since the run: don't clobber newer work.
 					$out['conflicts'][] = "{$table}.{$row['col_name']} ({$row['pk_col']} = {$row['pk_val']}) changed since the run, left as is";
-				} elseif ( false !== $wpdb->update( $table, array( $row['col_name'] => $row['old_value'] ), array( $row['pk_col'] => $row['pk_val'] ), array( '%s' ), array( '%s' ) ) ) {
+				} elseif ( false !== $wpdb->update( $table, array( $row['col_name'] => $row['old_value'] ), array( $row['pk_col'] => $row['pk_val'] ), array( '%s' ), array( '%s' ) ) ) { // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 					$out['restored']++;
 				}
 			}
-			$wpdb->delete( $bt, array( 'id' => $row['id'] ), array( '%d' ) );
+			$wpdb->delete( $bt, array( 'id' => $row['id'] ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		}
 		return $out;
 	}
 
 	public static function delete_backup( $run_id ) {
 		global $wpdb;
-		$wpdb->delete( self::backup_table(), array( 'run_id' => $run_id ), array( '%s' ) );
+		$wpdb->delete( self::backup_table(), array( 'run_id' => $run_id ), array( '%s' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 	}
 
 	public static function has_backup( $run_id ) {
